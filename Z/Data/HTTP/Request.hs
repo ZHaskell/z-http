@@ -5,7 +5,6 @@ import           Data.IORef
 import qualified Data.CaseInsensitive   as CI
 import qualified Z.Data.Builder         as B
 import qualified Z.Data.Parser          as P
-import qualified Z.Data.Parser          as P
 import qualified Z.Data.Text            as T
 import qualified Z.Data.Vector          as V
 import qualified Z.Data.Vector.Base     as V
@@ -102,10 +101,10 @@ requestLineParser = do
 
     -- version
     vbs <- P.bytes "HTTP/"
-    majv <- P.satisfy isDigit
+    majv <- P.digit
     P.word8 DOT
-    minv <- P.satisfy isDigit
-    let !version = Version (fromIntegral $ majv - DIGIT_0) (fromIntegral $ minv - DIGIT_0)
+    minv <- P.digit
+    let !version = Version majv minv
 
     -- request line end
     P.word8 CARRIAGE_RETURN
