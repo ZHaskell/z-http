@@ -37,7 +37,7 @@ data Method
     | OPTIONS
     | PATCH
     | CUSTOM_METHOD V.Bytes
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 instance T.Print Method where
     toUTF8BuilderP _ GET      = "GET"
@@ -53,7 +53,7 @@ instance T.Print Method where
 
 
 data Version = Version {-# UNPACK #-} !Int {-# UNPACK #-} !Int
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Show)
 
 instance T.Print Version where
     toUTF8BuilderP _ (Version maj min) = do

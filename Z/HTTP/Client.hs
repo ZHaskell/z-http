@@ -1,17 +1,21 @@
 module Z.HTTP.Client where
 
 import Z.IO.Network
-import Z.IO.Buffered
+import Z.IO.Buffered (newBufferedIO, readBuffer, writeBuffer')
 import Z.IO (withResource)
-import Z.Data.HTTP.Request (Method (..))
+import Z.Data.HTTP.Request (Method (..), Version(..))
 import Z.Data.Text (Text)
 import Z.Data.Parser (Parser)
 import Z.Data.CBytes (fromBytes, buildCBytes)
-import GHC.Word
+import GHC.Word (Word16)
 import qualified Z.Data.Parser as P
 import qualified Z.Data.ASCII  as C
 import qualified Z.Data.Vector as V
 import qualified Z.Data.Builder as B
+import qualified Z.Data.Text   as T
+
+import Z.Data.Vector.FlatMap (FlatMap)
+import qualified Z.Data.Vector.FlatMap as FlatMap
 
 type Path = V.Bytes
 
@@ -64,25 +68,31 @@ requestToBytes req = mconcat [method, " ", path, " ", version, CRLF, headers, CR
     method :: V.Bytes = "GET" -- TODO: find a way to serialise HTTP method from enum
     path :: V.Bytes = reqPath req
     version :: V.Bytes = "HTTP/1.1"
-    headers :: V.Bytes = ""
+    headers :: V.Bytes = "" -- TODO: find a way to serialise Flatmap to V.Bytes
+
+type Headers = FlatMap V.Bytes V.Bytes
+
+emptyHeaders :: Headers
+emptyHeaders = FlatMap.empty
 
 data Response = Response
-    { responseVersion :: HttpVersion
+    { responseVersion :: Version
     , responseCode    :: Word16 -- smallest unit that can contain 3 digits int
     , responseMessage :: V.Bytes
-    , responseHeaders :: [(V.Bytes, V.Bytes)]
-    } deriving (Show)
+    , responseHeaders :: Headers
+    } deriving Show
 
 -- TODO: user defined chunksize?
-sendRequest :: Request -> IO V.Bytes
+sendRequest :: Request -> IO Response
 sendRequest req = do
     addr <- resolveDNS (fromBytes $ reqHost req, Nothing)
     withResource (initTCPClient defaultTCPClientConfig { tcpRemoteAddr = addrAddress addr }) $ \tcp -> do
         (i, o) <- newBufferedIO tcp
         writeBuffer' o (requestToBytes req)
-        readBuffer i
-
-data HttpVersion = HttpVersion Int Int deriving (Show)
+        buf <- readBuffer i
+        case P.parse' httpParser buf of
+            Left _ -> undefined
+            Right res -> pure res
 
 httpParser :: Parser Response
 httpParser = do
@@ -95,11 +105,11 @@ httpParser = do
     P.skipSpaces
     httpMsg <- P.takeWhile (/= C.CARRIAGE_RETURN)
     P.bytes CRLF
-    !headers <- headersLoop []
-    return $ Response (HttpVersion maj min) httpCode httpMsg (reverse headers)
+    !headers <- headersLoop emptyHeaders
+    return $ Response (Version maj min) httpCode httpMsg headers
 
   where
-    headersLoop :: [(V.Bytes, V.Bytes)] -> Parser [(V.Bytes, V.Bytes)]
+    headersLoop :: Headers -> Parser Headers
     headersLoop acc = do
         w <- P.peek
         case w of
@@ -107,10 +117,9 @@ httpParser = do
                 P.bytes CRLF
                 return acc
             _ -> do
-                headerKey <- P.takeWhile (/= C.COLON)
+                key <- P.takeWhile (/= C.COLON)
                 P.word8 C.COLON
                 P.skipSpaces
-                headerVal <- P.takeWhile (/= C.CARRIAGE_RETURN)
+                val <- P.takeWhile (/= C.CARRIAGE_RETURN)
                 P.bytes CRLF
-                headersLoop $ (headerKey, headerVal) : acc -- Don't forget to reverse
-
+                headersLoop $ FlatMap.insert key val acc
