@@ -13,7 +13,7 @@ import           Z.Data.ASCII
 import           Z.Data.PrimRef
 import           Z.IO
 import           Z.IO.Network
-
+import           Z.IO.BIO (Source)
 
 data HTTPException
     = BadHeaderLine V.Bytes
@@ -132,7 +132,7 @@ readRequest remoteAddr secure bi = do
     host <- readIORef hostRef
     when (V.null host) $ throwIO NoHostHeader
 
-    contentLen <- readPrimIORef contentLenRef
+    contentLen <- readPrimRef contentLenRef
     transferEncoding <- readIORef transferEncodingRef
     keepAlive <- readIORef connectionRef
 
@@ -170,7 +170,7 @@ readRequest remoteAddr secure bi = do
 
                                 when (hdrK == "content-length") $
                                     case P.parse' P.uint hdrV of
-                                        Right l -> writePrimIORef contentLenRef l
+                                        Right l -> writePrimRef contentLenRef l
                                         _ -> throwIO (BadHeaderLine hdr)
 
                                 when (hdrK == "transfer-encoding") $
