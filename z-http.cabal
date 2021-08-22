@@ -29,8 +29,8 @@ library
 
   build-depends:      base   >=4.14
                     , case-insensitive == 1.*
-                    , Z-Data == 0.7.*
-                    , Z-IO   == 0.7.*
+                    , Z-Data == 1.0.*
+                    , Z-IO   == 1.0.*
 
   -- Directories containing source files.
   hs-source-dirs:     .
