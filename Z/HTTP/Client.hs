@@ -20,17 +20,19 @@ import qualified Z.Data.Vector.FlatMap as FlatMap
 type Path = V.Bytes
 
 data Request = Request
-    { reqMethod :: !Method
-    , reqPath :: !Path
+    { reqMethod :: Method
+    , reqPath :: Path
     , reqHost :: V.Bytes
+    , reqVersion :: Version
     , reqHeaders :: [(V.Bytes, V.Bytes)]
     }
 
 defaultRequest :: Request
 defaultRequest = Request
     { reqMethod = GET
-    , reqPath = V.empty 
+    , reqPath = "/"
     , reqHost = V.empty
+    , reqVersion = Version 1 1
     , reqHeaders = []
     }
 
@@ -62,13 +64,33 @@ resolveDNS (hostName, Nothing) = head <$> getAddrInfo Nothing hostName "http"
 pattern CRLF :: V.Bytes
 pattern CRLF = "\r\n"
 
-requestToBytes :: Request -> V.Bytes
-requestToBytes req = mconcat [method, " ", path, " ", version, CRLF, headers, CRLF]
+-- build lazily
+buildHeaders :: [(V.Bytes, V.Bytes)] -> B.Builder ()
+buildHeaders = foldl buildHeader ""
   where
-    method :: V.Bytes = "GET" -- TODO: find a way to serialise HTTP method from enum
-    path :: V.Bytes = reqPath req
-    version :: V.Bytes = "HTTP/1.1"
-    headers :: V.Bytes = "" -- TODO: find a way to serialise Flatmap to V.Bytes
+    buildHeader :: B.Builder () -> (V.Bytes, V.Bytes) -> B.Builder ()
+    buildHeader b (headerKey, headerVal) = B.append b $ do
+        B.bytes headerKey
+        B.word8 C.COLON
+        B.word8 C.SPACE
+        B.bytes headerVal
+        B.bytes CRLF
+
+requestToBytes :: Request -> V.Bytes
+requestToBytes req = B.build $ do
+    B.bytes method
+    B.encodePrim C.SPACE
+    B.bytes path
+    B.encodePrim C.SPACE
+    B.bytes version
+    B.bytes CRLF
+    headers
+    B.bytes CRLF
+  where
+    method  :: V.Bytes = T.toUTF8Bytes (reqMethod req)
+    path    :: V.Bytes = reqPath req
+    version :: V.Bytes = T.toUTF8Bytes (reqVersion req)
+    headers = buildHeaders $ ("Host", reqHost req) : reqHeaders req
 
 type Headers = FlatMap V.Bytes V.Bytes
 
