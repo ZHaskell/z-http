@@ -1,18 +1,27 @@
 module Z.HTTP.Client where
 
+import GHC.Word (Word16)
+import Data.Foldable (foldl')
 import Z.IO.Network
+    ( getAddrInfo
+    , defaultTCPClientConfig
+    , initTCPClient
+    , AddrInfo(addrAddress)
+    , HostName
+    , PortNumber(..)
+    , TCPClientConfig(tcpRemoteAddr)
+    )
 import Z.IO.Buffered (newBufferedIO, readBuffer, writeBuffer')
 import Z.IO (withResource)
 import Z.Data.HTTP.Request (Method (..), Version(..))
 import Z.Data.Text (Text)
 import Z.Data.Parser (Parser)
 import Z.Data.CBytes (fromBytes, buildCBytes)
-import GHC.Word (Word16)
-import qualified Z.Data.Parser as P
-import qualified Z.Data.ASCII  as C
-import qualified Z.Data.Vector as V
+import qualified Z.Data.Parser  as P
+import qualified Z.Data.ASCII   as C
+import qualified Z.Data.Vector  as V
 import qualified Z.Data.Builder as B
-import qualified Z.Data.Text   as T
+import qualified Z.Data.Text    as T
 
 import Z.Data.Vector.FlatMap (FlatMap)
 import qualified Z.Data.Vector.FlatMap as FlatMap
@@ -66,7 +75,7 @@ pattern CRLF = "\r\n"
 
 -- build lazily
 buildHeaders :: [(V.Bytes, V.Bytes)] -> B.Builder ()
-buildHeaders = foldl buildHeader ""
+buildHeaders = foldl' buildHeader ""
   where
     buildHeader :: B.Builder () -> (V.Bytes, V.Bytes) -> B.Builder ()
     buildHeader b (headerKey, headerVal) = B.append b $ do
