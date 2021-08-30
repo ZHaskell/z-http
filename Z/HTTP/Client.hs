@@ -1,7 +1,13 @@
+{-# LANGUAGE StrictData      #-}  -- Give an error instead of warnings in case
+                                  -- user forgets to initialize some fields
+{-# LANGUAGE RecordWildCards #-}
+
 module Z.HTTP.Client where
 
 import GHC.Word (Word16)
-import Data.Foldable (foldl')
+import Data.Foldable (foldr)
+import Data.Functor.Identity (Identity)
+import Data.Function ((&))
 import Z.IO.Network
     ( getAddrInfo
     , defaultTCPClientConfig
@@ -16,7 +22,7 @@ import Z.IO (withResource)
 import Z.Data.HTTP.Request (Method (..), Version(..))
 import Z.Data.Text (Text)
 import Z.Data.Parser (Parser)
-import Z.Data.CBytes (fromBytes, buildCBytes)
+import Z.Data.CBytes (fromBytes, buildCBytes, toBytes)
 import qualified Z.Data.Parser  as P
 import qualified Z.Data.ASCII   as C
 import qualified Z.Data.Vector  as V
@@ -36,6 +42,18 @@ data Request = Request
     , reqHeaders :: [(V.Bytes, V.Bytes)]
     }
 
+type Headers = FlatMap V.Bytes V.Bytes
+
+emptyHeaders :: Headers
+emptyHeaders = FlatMap.empty
+
+data Response = Response
+    { responseVersion :: Version
+    , responseCode    :: Word16  -- smallest unit that can contain 3 digits int
+    , responseMessage :: V.Bytes
+    , responseHeaders :: Headers
+    } deriving Show
+
 defaultRequest :: Request
 defaultRequest = Request
     { reqMethod = GET
@@ -47,25 +65,6 @@ defaultRequest = Request
 
 type Host = (HostName, Maybe PortNumber)
 
--- This should parse "www.google.com:80" but not "http://www.google.com:80"
-parseHost' :: Parser Host
-parseHost' = do
-    hostName <- P.takeTill (== C.COLON)
-    w <- P.peek
-    if w == C.COLON
-        then P.skipWord8 >> ((,) (fromBytes hostName) <$> (Just . PortNumber <$> P.int))
-        else pure (fromBytes hostName, Nothing)
-
-----------------------------
-
--- http-client
--- Builder model
--- https://github.com/snoyberg/http-client/blob/master/TUTORIAL.md#request-building
-
--- * Record
--- Simple
--- https://hackage.haskell.org/package/http-conduit-2.3.8/docs/Network-HTTP-Conduit.html
-
 resolveDNS :: Host -> IO AddrInfo
 resolveDNS (hostName, Just portNumber) = head <$> getAddrInfo Nothing hostName (buildCBytes . B.int $ portNumber)
 resolveDNS (hostName, Nothing) = head <$> getAddrInfo Nothing hostName "http"
@@ -75,13 +74,12 @@ pattern CRLF = "\r\n"
 
 -- build lazily
 buildHeaders :: [(V.Bytes, V.Bytes)] -> B.Builder ()
-buildHeaders = foldl' buildHeader ""
+buildHeaders = foldr buildHeader ""
   where
-    buildHeader :: B.Builder () -> (V.Bytes, V.Bytes) -> B.Builder ()
-    buildHeader b (headerKey, headerVal) = B.append b $ do
+    buildHeader :: (V.Bytes, V.Bytes) -> B.Builder () -> B.Builder ()
+    buildHeader (headerKey, headerVal) b = B.append b $ do
         B.bytes headerKey
         B.word8 C.COLON
-        B.word8 C.SPACE
         B.bytes headerVal
         B.bytes CRLF
 
@@ -100,18 +98,6 @@ requestToBytes req = B.build $ do
     path    :: V.Bytes = reqPath req
     version :: V.Bytes = T.toUTF8Bytes (reqVersion req)
     headers = buildHeaders $ ("Host", reqHost req) : reqHeaders req
-
-type Headers = FlatMap V.Bytes V.Bytes
-
-emptyHeaders :: Headers
-emptyHeaders = FlatMap.empty
-
-data Response = Response
-    { responseVersion :: Version
-    , responseCode    :: Word16 -- smallest unit that can contain 3 digits int
-    , responseMessage :: V.Bytes
-    , responseHeaders :: Headers
-    } deriving Show
 
 -- TODO: user defined chunksize?
 sendRequest :: Request -> IO Response
@@ -154,3 +140,42 @@ httpParser = do
                 val <- P.takeWhile (/= C.CARRIAGE_RETURN)
                 P.bytes CRLF
                 headersLoop $ FlatMap.insert key val acc
+
+-- This should parse "www.google.com:80" but not "http://www.google.com:80"
+parseHost :: Parser Host
+parseHost = do
+    hostName <- P.takeTill (== C.COLON)
+    w <- P.peek
+    if w == C.COLON
+        then P.skipWord8 >> ((,) (fromBytes hostName) <$> (Just . PortNumber <$> P.int))
+        else pure (fromBytes hostName, Nothing)
+
+fromHost :: Text -> Request
+fromHost host = let host' = T.toUTF8Bytes host in
+    case P.parse' parseHost (T.toUTF8Bytes host) of
+        Left err -> error (show err)
+        Right (hostName, Nothing) -> defaultRequest { reqHost = toBytes hostName }
+        Right (hostName, Just port) -> defaultRequest { reqHost = toBytes hostName <> ":" <> T.toUTF8Bytes port }
+
+fromIpAddr :: Text -> Request
+fromIpAddr = undefined
+
+f :: Request
+f = fromHost "www.google.com"
+    & setPath "/url"
+    & setHeadears [("X-Powered-By", "Z-HTTP-Client")]
+
+setMethod :: Method -> Request -> Request
+setMethod method req@Request{..} = req { reqMethod = method }
+
+setPath :: V.Bytes -> Request -> Request
+setPath path req@Request{..} = req { reqPath = path }
+
+-- setHost :: V.Bytes -> Request -> Request
+-- setHost host req@Request{..} = req { reqHost = host }
+
+setVersion :: Version -> Request -> Request
+setVersion version req@Request{..} = req { reqVersion = version }
+
+setHeadears :: [(V.Bytes, V.Bytes)] -> Request -> Request
+setHeadears headers req@Request{..} = req { reqHeaders = headers } 
