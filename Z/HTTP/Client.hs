@@ -160,19 +160,16 @@ fromHost host = let host' = T.toUTF8Bytes host in
 fromIpAddr :: Text -> Request
 fromIpAddr = undefined
 
-f :: Request
-f = fromHost "www.google.com"
-    & setPath "/url"
-    & setHeadears [("X-Powered-By", "Z-HTTP-Client")]
+-- | f :: Request
+-- | f = fromHost "www.google.com"
+-- |     & setPath "/url"
+-- |     & setHeadears [("X-Powered-By", "Z-HTTP-Client")]
 
 setMethod :: Method -> Request -> Request
 setMethod method req@Request{..} = req { reqMethod = method }
 
 setPath :: V.Bytes -> Request -> Request
 setPath path req@Request{..} = req { reqPath = path }
-
--- setHost :: V.Bytes -> Request -> Request
--- setHost host req@Request{..} = req { reqHost = host }
 
 setVersion :: Version -> Request -> Request
 setVersion version req@Request{..} = req { reqVersion = version }
