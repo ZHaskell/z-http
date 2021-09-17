@@ -42,6 +42,8 @@ data Request = Request
     , reqHeaders :: [(V.Bytes, V.Bytes)]
     }
 
+data Protocol = HTTP | HTTPS deriving Show
+
 type Headers = FlatMap V.Bytes V.Bytes
 
 emptyHeaders :: Headers
@@ -140,6 +142,14 @@ httpParser = do
                 val <- P.takeWhile (/= C.CARRIAGE_RETURN)
                 P.bytes CRLF
                 headersLoop $ FlatMap.insert key val acc
+
+parseUri :: Parser (Protocol, Host)
+parseUri = do
+    P.bytes "http"
+    proto <- P.peek
+    if proto == C.LETTER_S
+        then P.skipWord8 >> P.bytes "://" >> ((,) HTTPS <$> parseHost)
+        else P.bytes "://" >> ((,) HTTP <$> parseHost)
 
 -- This should parse "www.google.com:80" but not "http://www.google.com:80"
 parseHost :: Parser Host
