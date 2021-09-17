@@ -5,7 +5,6 @@ import           Data.IORef
 import qualified Data.CaseInsensitive   as CI
 import qualified Z.Data.Builder         as B
 import qualified Z.Data.Parser          as P
-import qualified Z.Data.Parser          as P
 import qualified Z.Data.Text            as T
 import qualified Z.Data.Vector          as V
 import qualified Z.Data.Vector.Base     as V
@@ -14,7 +13,7 @@ import           Z.Data.ASCII
 import           Z.Data.PrimRef
 import           Z.IO
 import           Z.IO.Network
-
+import           Z.IO.BIO (Source)
 
 data HTTPException
     = BadHeaderLine V.Bytes
@@ -54,11 +53,11 @@ instance T.Print Method where
 
 
 data Version = Version {-# UNPACK #-} !Int {-# UNPACK #-} !Int
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Show)
 
 instance T.Print Version where
     toUTF8BuilderP _ (Version maj min) = do
-        "HTTP"
+        "HTTP/"
         B.int maj
         B.encodePrim DOT
         B.int min
@@ -102,10 +101,10 @@ requestLineParser = do
 
     -- version
     vbs <- P.bytes "HTTP/"
-    majv <- P.satisfy isDigit
+    majv <- P.digit
     P.word8 DOT
-    minv <- P.satisfy isDigit
-    let !version = Version (fromIntegral $ majv - DIGIT_0) (fromIntegral $ minv - DIGIT_0)
+    minv <- P.digit
+    let !version = Version majv minv
 
     -- request line end
     P.word8 CARRIAGE_RETURN
@@ -133,7 +132,7 @@ readRequest remoteAddr secure bi = do
     host <- readIORef hostRef
     when (V.null host) $ throwIO NoHostHeader
 
-    contentLen <- readPrimIORef contentLenRef
+    contentLen <- readPrimRef contentLenRef
     transferEncoding <- readIORef transferEncodingRef
     keepAlive <- readIORef connectionRef
 
@@ -171,7 +170,7 @@ readRequest remoteAddr secure bi = do
 
                                 when (hdrK == "content-length") $
                                     case P.parse' P.uint hdrV of
-                                        Right l -> writePrimIORef contentLenRef l
+                                        Right l -> writePrimRef contentLenRef l
                                         _ -> throwIO (BadHeaderLine hdr)
 
                                 when (hdrK == "transfer-encoding") $

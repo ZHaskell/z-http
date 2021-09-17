@@ -22,14 +22,15 @@ extra-source-files: CHANGELOG.md
 library
   exposed-modules:  Z.Data.HTTP.Request
                     Z.HTTP.Server
+                    Z.HTTP.Client
 
   -- Modules included in this library but not exported.
   -- other-modules:
 
   build-depends:      base   >=4.14
                     , case-insensitive == 1.*
-                    , Z-Data == 0.7.*
-                    , Z-IO   == 0.7.*
+                    , Z-Data == 1.0.*
+                    , Z-IO   == 1.0.*
 
   -- Directories containing source files.
   hs-source-dirs:     .
